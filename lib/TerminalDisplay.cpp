@@ -2274,6 +2274,7 @@ void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
 
   if ( ev->button() == Qt::LeftButton)
   {
+
     // Ctrl+click opens OSC 8 hyperlinks.
     if (ev->modifiers() & Qt::ControlModifier) {
       const QString url = hyperlinkAt(charLine, charColumn);
@@ -2283,21 +2284,27 @@ void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
       }
     }
 
+    // Shift+click extends the selection, but only for programs not interested in mouse.
+    if (_mouseMarks && (ev->modifiers() & Qt::ShiftModifier)) {
+      extendSelection(ev->position().toPoint());
+      return;
+    }
+
     _lineSelectionMode = false;
     _wordSelectionMode = false;
 
     emit isBusySelecting(true); // Keep it steady...
-    // Drag only when the Control key is hold
     bool selected = false;
 
     // The receiver of the testIsSelected() signal will adjust
     // 'selected' accordingly.
     //emit testIsSelected(pos.x(), pos.y(), selected);
 
+    // The user clicked inside selected text
     selected =  _screenWindow->isSelected(pos.x(),pos.y());
 
+    // Drag only when the Control key is hold
     if ((!_ctrlDrag || ev->modifiers() & Qt::ControlModifier) && selected ) {
-      // The user clicked inside selected text
       dragInfo.state = diPending;
       dragInfo.start = ev->pos();
     }
