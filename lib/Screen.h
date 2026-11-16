@@ -622,6 +622,9 @@ private:
 
     void updateEffectiveRendition();
     void reverseRendition(Character& p) const;
+    // Rendition for selected cells: like reverseRendition(), but with a
+    // half-intensity background so large selections are not glaringly bright.
+    void selectionRendition(Character& p) const;
 
     bool isSelectionValid() const;
     // copies text from 'startIndex' to 'endIndex' to a stream

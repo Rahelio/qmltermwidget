@@ -431,6 +431,12 @@ void Screen::reverseRendition(Character& p) const
     p.backgroundColor = f; //p->r &= ~RE_TRANSPARENT;
 }
 
+void Screen::selectionRendition(Character& p) const
+{
+    reverseRendition(p);
+    p.backgroundColor = CharacterColor(COLOR_SPACE_RGB, 0x808080);
+}
+
 void Screen::updateEffectiveRendition()
 {
     effectiveRendition = currentRendition;
@@ -470,7 +476,7 @@ void Screen::copyFromHistory(Character* dest, int startLine, int count) const
             {
                 if (isSelected(column,line))
                 {
-                    reverseRendition(dest[destLineOffset + column]);
+                    selectionRendition(dest[destLineOffset + column]);
                 }
             }
         }
@@ -495,7 +501,7 @@ void Screen::copyFromScreen(Character* dest , int startLine , int count) const
 
             // invert selected text
             if (selBegin != -1 && isSelected(column,line + history->getLines()))
-                reverseRendition(dest[destIndex]);
+                selectionRendition(dest[destIndex]);
         }
 
     }
