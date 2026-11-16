@@ -416,11 +416,11 @@ TerminalDisplay::TerminalDisplay(QQuickItem *parent)
 ,_cursorShape(Emulation::KeyboardCursorShape::BlockCursor)
 ,mMotionAfterPasting(NoMoveScreenWindow)
 ,_confirmMultilinePaste(false)
+,_leftBaseMargin(1)
+,_topBaseMargin(1)
 ,m_font("Monospace", 12)
 ,m_color_role(QPalette::Window)
 ,m_full_cursor_height(false)
-,_leftBaseMargin(1)
-,_topBaseMargin(1)
 ,_drawLineChars(true)
 ,_mouseAutohideDelay(-1)
 {
@@ -3862,8 +3862,8 @@ void TerminalDisplay::simulateKeyPress(int key, int modifiers, bool pressed, qui
 void TerminalDisplay::simulateKeySequence(const QKeySequence &keySequence)
 {
     for (int i = 0; i < keySequence.count(); ++i) {
-        const Qt::Key key = Qt::Key(keySequence[i] & ~Qt::KeyboardModifierMask);
-        const Qt::KeyboardModifiers modifiers = Qt::KeyboardModifiers(keySequence[i] & Qt::KeyboardModifierMask);
+        const Qt::Key key = keySequence[i].key();
+        const Qt::KeyboardModifiers modifiers = keySequence[i].keyboardModifiers();
         QKeyEvent eventPress = QKeyEvent(QEvent::KeyPress, key, modifiers, "");
         keyPressedSignal(&eventPress, false);
     }
@@ -3878,22 +3878,26 @@ void TerminalDisplay::simulateWheel(int x, int y, int buttons, int modifiers, QP
 }
 
 void TerminalDisplay::simulateMouseMove(int x, int y, int button, int buttons, int modifiers){
-    QMouseEvent event(QEvent::MouseMove, QPointF(x, y),(Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
+    QMouseEvent event(QEvent::MouseMove, QPointF(x, y), QPointF(x, y), QCursor::pos(),
+                      (Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
     mouseMoveEvent(&event);
 }
 
 void TerminalDisplay::simulateMousePress(int x, int y, int button, int buttons, int modifiers){
-    QMouseEvent event(QEvent::MouseButtonPress, QPointF(x, y),(Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
+    QMouseEvent event(QEvent::MouseButtonPress, QPointF(x, y), QPointF(x, y), QCursor::pos(),
+                      (Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
     mousePressEvent(&event);
 }
 
 void TerminalDisplay::simulateMouseRelease(int x, int y, int button, int buttons, int modifiers){
-    QMouseEvent event(QEvent::MouseButtonRelease, QPointF(x, y),(Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
+    QMouseEvent event(QEvent::MouseButtonRelease, QPointF(x, y), QPointF(x, y), QCursor::pos(),
+                      (Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
     mouseReleaseEvent(&event);
 }
 
 void TerminalDisplay::simulateMouseDoubleClick(int x, int y, int button, int buttons, int modifiers){
-    QMouseEvent event(QEvent::MouseButtonDblClick, QPointF(x, y),(Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
+    QMouseEvent event(QEvent::MouseButtonDblClick, QPointF(x, y), QPointF(x, y), QCursor::pos(),
+                      (Qt::MouseButton) button, (Qt::MouseButtons) buttons, (Qt::KeyboardModifiers) modifiers);
     mouseDoubleClickEvent(&event);
 }
 
