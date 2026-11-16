@@ -497,6 +497,11 @@ public:
     // of the character at that point.
     void getCharacterPosition(const QPointF& widgetPoint,int& line,int& column) const;
 
+    // OSC 8 hyperlink under the given display position, or an empty string.
+    QString hyperlinkAt(int line, int column) const;
+    // Opens an OSC 8 hyperlink with the desktop's handler (limited schemes).
+    void openHyperlink(const QString& url);
+
     void disableBracketedPasteMode(bool disable) { _disabledBracketedPasteMode = disable; }
     bool bracketedPasteModeIsDisabled() const { return _disabledBracketedPasteMode; }
 

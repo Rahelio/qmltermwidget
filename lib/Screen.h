@@ -24,6 +24,7 @@
 #define SCREEN_H
 
 // Qt
+#include <QHash>
 #include <QRect>
 #include <QSet>
 #include <QTextStream>
@@ -347,6 +348,14 @@ public:
     void reset(bool clearScreen = true);
 
     /**
+     * Sets the OSC 8 hyperlink for characters printed from now on.
+     * An empty @p url ends the current hyperlink.
+     */
+    void setHyperlink(const QString& url);
+    /** Returns the URL of hyperlink @p id, or an empty string. */
+    QString hyperlinkUrl(quint16 id) const;
+
+    /**
      * Displays a new character at the current cursor position.
      *
      * If the cursor is currently positioned at the right-edge of the screen and
@@ -663,6 +672,11 @@ private:
     // cursor color and rendition info
     CharacterColor currentForeground;
     CharacterColor currentBackground;
+    // OSC 8 hyperlinks: cell hyperlinkId N refers to _hyperlinks[N-1].
+    QVector<QString> _hyperlinks;
+    QHash<QString, quint16> _hyperlinkIds;
+    quint16 _currentHyperlink = 0;
+
     quint8 currentRendition;
 
     // margins ----------------

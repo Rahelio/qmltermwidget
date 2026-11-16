@@ -64,6 +64,11 @@ Emulation::Emulation() :
   QObject::connect(&_bulkTimer1, &QTimer::timeout, this, &Konsole::Emulation::showBulk);
   QObject::connect(&_bulkTimer2, &QTimer::timeout, this, &Konsole::Emulation::showBulk);
 
+  _synchronizedUpdateTimeout.setSingleShot(true);
+  QObject::connect(&_synchronizedUpdateTimeout, &QTimer::timeout, this, [this] {
+    setSynchronizedUpdate(false);
+  });
+
   // listen for mouse status changes
   connect(this, &Konsole::Emulation::programUsesMouseChanged,
           this, &Konsole::Emulation::usesMouseChanged);
@@ -321,16 +326,43 @@ void Emulation::showBulk()
     _bulkTimer1.stop();
     _bulkTimer2.stop();
 
+    // Held back until synchronized output ends (see setSynchronizedUpdate()).
+    if (_synchronizedUpdate)
+        return;
+
     emit outputChanged();
 
     _currentScreen->resetScrolledLines();
     _currentScreen->resetDroppedLines();
 }
 
+void Emulation::setSynchronizedUpdate(bool enabled)
+{
+    // Upper bound for a synchronized frame, so a program that never ends
+    // synchronized output (e.g. because it crashed) cannot freeze the display.
+    static const int SYNCHRONIZED_UPDATE_TIMEOUT = 200;
+
+    if (enabled) {
+        _synchronizedUpdate = true;
+        _synchronizedUpdateTimeout.start(SYNCHRONIZED_UPDATE_TIMEOUT);
+        return;
+    }
+
+    if (!_synchronizedUpdate)
+        return;
+
+    _synchronizedUpdate = false;
+    _synchronizedUpdateTimeout.stop();
+    showBulk();
+}
+
 void Emulation::bufferedUpdate()
 {
     static const int BULK_TIMEOUT1 = 10;
     static const int BULK_TIMEOUT2 = 40;
+
+    if (_synchronizedUpdate)
+        return;
 
    _bulkTimer1.setSingleShot(true);
    _bulkTimer1.start(BULK_TIMEOUT1);

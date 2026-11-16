@@ -88,6 +88,9 @@ public:
   /** A combination of RENDITION flags which specify options for drawing the character. */
   quint8  rendition;
 
+  /** OSC 8 hyperlink of this cell (0 = none); see Screen::hyperlinkUrl(). */
+  quint16 hyperlinkId = 0;
+
   /** The foreground color used to draw this character. */
   CharacterColor  foregroundColor;
   /** The color used to draw this character's background. */
@@ -136,6 +139,7 @@ inline bool operator == (const Character& a, const Character& b)
 {
   return a.character == b.character &&
          a.rendition == b.rendition &&
+         a.hyperlinkId == b.hyperlinkId &&
          a.foregroundColor == b.foregroundColor &&
          a.backgroundColor == b.backgroundColor;
 }
@@ -161,7 +165,8 @@ inline bool Character::equalsFormat(const Character& other) const
   return
     backgroundColor==other.backgroundColor &&
     foregroundColor==other.foregroundColor &&
-    rendition==other.rendition;
+    rendition==other.rendition &&
+    hyperlinkId==other.hyperlinkId;
 }
 
 inline ColorEntry::FontWeight Character::fontWeight(const ColorEntry* base) const

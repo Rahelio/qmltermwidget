@@ -50,7 +50,8 @@
 #define MODE_132Columns      (MODES_SCREEN+11)  // 80 <-> 132 column mode switch (DECCOLM)
 #define MODE_Allow132Columns (MODES_SCREEN+12)  // Allow DECCOLM mode
 #define MODE_BracketedPaste  (MODES_SCREEN+13)  // Xterm-style bracketed paste mode
-#define MODE_total           (MODES_SCREEN+14)
+#define MODE_SyncOutput      (MODES_SCREEN+14)  // Synchronized output (DEC private mode 2026)
+#define MODE_total           (MODES_SCREEN+15)
 
 namespace Konsole
 {
@@ -139,6 +140,10 @@ private:
   #define MAX_TOKEN_LENGTH 256 // Max length of tokens (e.g. window title)
   void addToCurrentToken(wchar_t cc);
   wchar_t tokenBuffer[MAX_TOKEN_LENGTH]; //FIXME: overflow?
+  // Full payload of the OSC sequence being received (everything after
+  // "ESC ]"); tokenBuffer is too short for clipboard data and long URLs.
+  #define MAX_OSC_LENGTH (1 << 20)
+  QString _oscBuffer;
   int tokenBufferPos;
 #define MAXARGS 15
   void addDigit(int dig);
@@ -157,9 +162,12 @@ private:
 
   void processToken(int code, wchar_t p, int q);
   void processWindowAttributeChange();
+  void setClipboardFromOsc(const QString& value);   // OSC 52
+  void processHyperlink(const QString& value);      // OSC 8
   void requestWindowAttribute(int);
 
   void reportTerminalType();
+  void reportMode(int mode, bool privateMode);
   void reportSecondaryAttributes();
   void reportStatus();
   void reportAnswerBack();

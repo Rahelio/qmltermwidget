@@ -469,6 +469,13 @@ void Screen::copyFromHistory(Character* dest, int startLine, int count) const
         for (int column = length; column < columns; column++)
             dest[destLineOffset+column] = defaultChar;
 
+        // underline OSC 8 hyperlinks
+        for (int column = 0; column < columns; column++)
+        {
+            if (dest[destLineOffset + column].hyperlinkId)
+                dest[destLineOffset + column].rendition |= RE_UNDERLINE;
+        }
+
         // invert selected text
         if (selBegin !=-1)
         {
@@ -498,6 +505,8 @@ void Screen::copyFromScreen(Character* dest , int startLine , int count) const
             int destIndex = destLineStartIndex + column;
 
             dest[destIndex] = screenLines[srcIndex/columns].value(srcIndex%columns,defaultChar);
+            if (dest[destIndex].hyperlinkId)
+                dest[destIndex].rendition |= RE_UNDERLINE;
 
             // invert selected text
             if (selBegin != -1 && isSelected(column,line + history->getLines()))
@@ -591,9 +600,41 @@ void Screen::reset(bool clearScreen)
 
     setDefaultRendition();
     saveCursor();
+    _currentHyperlink = 0;
 
     if ( clearScreen )
         clear();
+}
+
+void Screen::setHyperlink(const QString& url)
+{
+    if (url.isEmpty()) {
+        _currentHyperlink = 0;
+        return;
+    }
+
+    auto it = _hyperlinkIds.constFind(url);
+    if (it != _hyperlinkIds.constEnd()) {
+        _currentHyperlink = it.value();
+        return;
+    }
+
+    // Ids are 16 bit; once they run out, further new links are not tracked.
+    if (_hyperlinks.size() >= 0xFFFF) {
+        _currentHyperlink = 0;
+        return;
+    }
+
+    _hyperlinks.append(url);
+    _currentHyperlink = quint16(_hyperlinks.size());
+    _hyperlinkIds.insert(url, _currentHyperlink);
+}
+
+QString Screen::hyperlinkUrl(quint16 id) const
+{
+    if (id == 0 || id > _hyperlinks.size())
+        return QString();
+    return _hyperlinks.at(id - 1);
 }
 
 void Screen::clear()
@@ -773,6 +814,7 @@ void Screen::displayCharacter(wchar_t c)
                 ch.foregroundColor = effectiveForeground;
                 ch.backgroundColor = effectiveBackground;
                 ch.rendition = effectiveRendition;
+                ch.hyperlinkId = _currentHyperlink;
 
                 if (getMode(MODE_Insert))
                 {
@@ -838,6 +880,7 @@ notcombine:
     currentChar.foregroundColor = effectiveForeground;
     currentChar.backgroundColor = effectiveBackground;
     currentChar.rendition = effectiveRendition;
+    currentChar.hyperlinkId = _currentHyperlink;
 
     lastDrawnChar = c;
 

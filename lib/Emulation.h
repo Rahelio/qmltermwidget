@@ -445,6 +445,13 @@ protected:
   virtual void resetMode(int mode) = 0;
 
   /**
+   * Synchronized output (DEC private mode 2026): while enabled, screen
+   * updates are held back so the program's frame is shown all at once when
+   * it is disabled again. A timeout ends it if the program never does.
+   */
+  void setSynchronizedUpdate(bool enabled);
+
+  /**
    * Processes an incoming character.  See receiveData()
    * @p ch A unicode character code.
    */
@@ -503,6 +510,8 @@ private:
   bool _bracketedPasteMode;
   QTimer _bulkTimer1{this};
   QTimer _bulkTimer2{this};
+  bool _synchronizedUpdate = false;
+  QTimer _synchronizedUpdateTimeout{this};
   QStringDecoder _toUtf16;
 };
 

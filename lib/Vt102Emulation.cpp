@@ -30,7 +30,9 @@
 #include <unistd.h>
 
 // Qt
+#include <QClipboard>
 #include <QEvent>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QDebug>
 
@@ -167,6 +169,7 @@ void Vt102Emulation::reset()
 void Vt102Emulation::resetTokenizer()
 {
   tokenBufferPos = 0;
+  _oscBuffer.clear();
   argc = 0;
   argv[0] = 0;
   argv[1] = 0;
@@ -189,6 +192,9 @@ void Vt102Emulation::addToCurrentToken(wchar_t cc)
 {
   tokenBuffer[tokenBufferPos] = cc;
   tokenBufferPos = qMin(tokenBufferPos+1,MAX_TOKEN_LENGTH-1);
+
+  if (tokenBufferPos > 2 && tokenBuffer[1] == ']' && _oscBuffer.size() < MAX_OSC_LENGTH)
+    _oscBuffer.append(QString::fromWCharArray(&cc, 1));
 }
 
 // Character Class flags used while decoding
@@ -310,6 +316,16 @@ void Vt102Emulation::receiveChar(wchar_t cc)
     if (lec(2,0,ESC)) { processToken( TY_ESC(s[1]), 0, 0);              resetTokenizer(); return; }
     if (les(3,1,SCS)) { processToken( TY_ESC_CS(s[1],s[2]), 0, 0);      resetTokenizer(); return; }
     if (lec(3,1,'#')) { processToken( TY_ESC_DE(s[2]), 0, 0);           resetTokenizer(); return; }
+    // CSI [?] Ps $ p (DECRQM): '$' is an intermediate byte, so wait for the
+    // final byte instead of ending the sequence and printing the rest.
+    if (p >= 3 && s[1] == '[' && cc == '$') { return; }
+    if (p >= 4 && s[1] == '[' && s[p-2] == '$')
+    {
+        if (cc == 'p')
+            reportMode(argv[0], epp());
+        resetTokenizer();
+        return;
+    }
     if (eps(    CPN)) { processToken( TY_CSI_PN(cc), argv[0],argv[1]);  resetTokenizer(); return; }
     if (esp(       )) { return; }
     if (lec(5, 4, 'q') && s[3] == ' ') {
@@ -383,30 +399,77 @@ void Vt102Emulation::receiveChar(wchar_t cc)
 }
 void Vt102Emulation::processWindowAttributeChange()
 {
+  // _oscBuffer holds everything after "ESC ]": "<number>;<value>" followed by
+  // the terminator (BEL, or the '\\' of ST; control characters inside OSC
+  // are not stored, so the ESC of ST is not there).
   // Describes the window or terminal session attribute to change
   // See Session::UserTitleChange for possible values
   int attributeToChange = 0;
   int i;
-  for (i = 2; i < tokenBufferPos     &&
-              tokenBuffer[i] >= '0'  &&
-              tokenBuffer[i] <= '9'; i++)
+  for (i = 0; i < _oscBuffer.size() &&
+              _oscBuffer[i] >= QLatin1Char('0') &&
+              _oscBuffer[i] <= QLatin1Char('9'); i++)
   {
-    attributeToChange = 10 * attributeToChange + (tokenBuffer[i]-'0');
+    attributeToChange = 10 * attributeToChange + (_oscBuffer[i].unicode() - '0');
   }
 
-  if (tokenBuffer[i] != ';')
+  if (i >= _oscBuffer.size() || _oscBuffer[i] != QLatin1Char(';'))
   {
     reportDecodingError();
     return;
   }
 
-  // copy from the first char after ';', and skipping the ending delimiter
-  // 0x07 or 0x92. Note that as control characters in OSC text parts are
-  // ignored, only the second char in ST ("\e\\") is appended to tokenBuffer.
-  QString newValue = QString::fromWCharArray(tokenBuffer + i + 1, tokenBufferPos-i-2);
+  // copy from the first char after ';', skipping the terminator
+  QString newValue = _oscBuffer.mid(i + 1, _oscBuffer.size() - i - 2);
+
+  switch (attributeToChange)
+  {
+    case 8:  processHyperlink(newValue);    return;
+    case 52: setClipboardFromOsc(newValue); return;
+  }
 
   _pendingTitleUpdates[attributeToChange] = newValue;
   _titleUpdateTimer->start(20);
+}
+
+void Vt102Emulation::setClipboardFromOsc(const QString& value)
+{
+  // OSC 52 ; <targets> ; <base64 data>. Reading the clipboard ("?") is
+  // deliberately not supported, so programs cannot read what the user copied.
+  const int separator = value.indexOf(QLatin1Char(';'));
+  if (separator < 0)
+    return;
+
+  const QString targets = value.left(separator);
+  const QString data = value.mid(separator + 1);
+  if (data.isEmpty() || data == QLatin1String("?"))
+    return;
+
+  const auto decoded = QByteArray::fromBase64Encoding(data.toLatin1(),
+                                                      QByteArray::AbortOnBase64DecodingErrors);
+  if (!decoded)
+    return;
+
+  const QString text = QString::fromUtf8(*decoded);
+  QClipboard *clipboard = QGuiApplication::clipboard();
+
+  const bool toSelection = targets.contains(QLatin1Char('p')) || targets.contains(QLatin1Char('s'));
+  const bool toClipboard = targets.isEmpty() || targets.contains(QLatin1Char('c')) || !toSelection;
+
+  if (toClipboard)
+    clipboard->setText(text, QClipboard::Clipboard);
+  if (toSelection && clipboard->supportsSelection())
+    clipboard->setText(text, QClipboard::Selection);
+}
+
+void Vt102Emulation::processHyperlink(const QString& value)
+{
+  // OSC 8 ; <params> ; <URI>. An empty URI ends the current hyperlink.
+  const int separator = value.indexOf(QLatin1Char(';'));
+  if (separator < 0)
+    return;
+
+  _currentScreen->setHyperlink(value.mid(separator + 1));
 }
 
 void Vt102Emulation::updateTitle()
@@ -809,6 +872,11 @@ void Vt102Emulation::processToken(int token, wchar_t p, int q)
     case TY_CSI_PR('s', 2004) :         saveMode      (MODE_BracketedPaste); break; //XTERM
     case TY_CSI_PR('r', 2004) :      restoreMode      (MODE_BracketedPaste); break; //XTERM
 
+    case TY_CSI_PR('h', 2026) :          setMode      (MODE_SyncOutput); break;
+    case TY_CSI_PR('l', 2026) :        resetMode      (MODE_SyncOutput); break;
+    case TY_CSI_PR('s', 2026) :         saveMode      (MODE_SyncOutput); break;
+    case TY_CSI_PR('r', 2026) :      restoreMode      (MODE_SyncOutput); break;
+
     //FIXME: weird DEC reset sequence
     case TY_CSI_PE('p'      ) : /* IGNORED: reset         (        ) */ break;
 
@@ -863,6 +931,37 @@ void Vt102Emulation::reportCursorPosition()
   if (sz <= r) {
     qWarning("Vt102Emulation::reportCursorPosition: Buffer too small\n");
   }
+  sendString(tmp);
+}
+
+void Vt102Emulation::reportMode(int mode, bool privateMode)
+{
+  // DECRPM reply to DECRQM: 0 = not recognized, 1 = set, 2 = reset.
+  int state = 0;
+  if (privateMode)
+  {
+    int m = -1;
+    switch (mode)
+    {
+      case 1:    m = MODE_AppCuKeys;      break;
+      case 47:
+      case 1047:
+      case 1049: m = MODE_AppScreen;      break;
+      case 1000: m = MODE_Mouse1000;      break;
+      case 1002: m = MODE_Mouse1002;      break;
+      case 1003: m = MODE_Mouse1003;      break;
+      case 1005: m = MODE_Mouse1005;      break;
+      case 1006: m = MODE_Mouse1006;      break;
+      case 1015: m = MODE_Mouse1015;      break;
+      case 2004: m = MODE_BracketedPaste; break;
+      case 2026: m = MODE_SyncOutput;     break;
+    }
+    if (m != -1)
+      state = getMode(m) ? 1 : 2;
+  }
+
+  char tmp[32];
+  snprintf(tmp, sizeof(tmp), privateMode ? "\033[?%d;%d$y" : "\033[%d;%d$y", mode, state);
   sendString(tmp);
 }
 
@@ -1282,6 +1381,7 @@ void Vt102Emulation::resetModes()
   resetMode(MODE_Mouse1006);  saveMode(MODE_Mouse1006);
   resetMode(MODE_Mouse1015);  saveMode(MODE_Mouse1015);
   resetMode(MODE_BracketedPaste);  saveMode(MODE_BracketedPaste);
+  resetMode(MODE_SyncOutput);  saveMode(MODE_SyncOutput);
 
   resetMode(MODE_AppScreen);  saveMode(MODE_AppScreen);
   resetMode(MODE_AppCuKeys);  saveMode(MODE_AppCuKeys);
@@ -1313,6 +1413,10 @@ void Vt102Emulation::setMode(int m)
 
     break;
 
+    case MODE_SyncOutput:
+        setSynchronizedUpdate(true);
+    break;
+
     case MODE_AppScreen : _screen[1]->clearSelection();
                           setScreen(1);
     break;
@@ -1342,6 +1446,10 @@ void Vt102Emulation::resetMode(int m)
 
     case MODE_BracketedPaste:
         emit programBracketedPasteModeChanged(false);
+    break;
+
+    case MODE_SyncOutput:
+        setSynchronizedUpdate(false);
     break;
 
     case MODE_AppScreen :

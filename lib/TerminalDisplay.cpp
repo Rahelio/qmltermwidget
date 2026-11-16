@@ -51,6 +51,7 @@
 #include <QGuiApplication>
 #include <QQuickWindow>
 #include <QUrl>
+#include <QDesktopServices>
 #include <QDrag>
 
 // KDE
@@ -69,6 +70,7 @@
 //#include <config-apps.h>
 #include "Filter.h"
 #include "konsole_wcwidth.h"
+#include "Screen.h"
 #include "ScreenWindow.h"
 #include "TerminalCharacterDecoder.h"
 
@@ -2231,6 +2233,34 @@ void TerminalDisplay::setScrollBarPosition(QTermWidget::ScrollBarPosition positi
   update();
 }
 
+QString TerminalDisplay::hyperlinkAt(int line, int column) const
+{
+    if (!_screenWindow || !_image || line < 0 || column < 0 || column >= _columns)
+        return QString();
+
+    const int index = line * _columns + column;
+    if (index >= _imageSize)
+        return QString();
+
+    const quint16 id = _image[index].hyperlinkId;
+    return id ? _screenWindow->screen()->hyperlinkUrl(id) : QString();
+}
+
+void TerminalDisplay::openHyperlink(const QString& url)
+{
+    static const QStringList allowedSchemes = {
+        QStringLiteral("http"), QStringLiteral("https"), QStringLiteral("ftp"),
+        QStringLiteral("mailto"), QStringLiteral("file")
+    };
+
+    const QUrl target(url);
+    if (!target.isValid() || !allowedSchemes.contains(target.scheme().toLower())) {
+        qWarning() << "Not opening hyperlink with unsupported scheme:" << target.scheme();
+        return;
+    }
+    QDesktopServices::openUrl(target);
+}
+
 void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
 {
   if ( _possibleTripleClick && (ev->button()==Qt::LeftButton) ) {
@@ -2249,6 +2279,15 @@ void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
 
   if ( ev->button() == Qt::LeftButton)
   {
+    // Ctrl+click opens OSC 8 hyperlinks.
+    if (ev->modifiers() & Qt::ControlModifier) {
+      const QString url = hyperlinkAt(charLine, charColumn);
+      if (!url.isEmpty()) {
+        openHyperlink(url);
+        return;
+      }
+    }
+
     _lineSelectionMode = false;
     _wordSelectionMode = false;
 
