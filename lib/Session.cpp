@@ -309,7 +309,12 @@ void Session::run()
                                       _addToUtmp);
 
     if (result < 0) {
-        qDebug() << "CRASHED! result: " << result;
+        // Nothing will run in this session. Say why on the screen rather than
+        // leaving an empty terminal; the view stays open so it can be read.
+        const QString error = _shellProcess->errorString();
+        qWarning() << "Failed to start" << exec << ":" << error;
+        const QByteArray text = QStringLiteral("Failed to start %1: %2\r\n").arg(exec, error).toLocal8Bit();
+        _emulation->receiveData(text.constData(), text.size());
         return;
     }
 
@@ -633,24 +638,12 @@ void Session::done(int exitCode, QProcess::ExitStatus exitStatus)
         return;
     }
 
-    // message is not being used. But in the original kpty.cpp file
-    // (https://cgit.kde.org/kpty.git/) it's part of a notification.
-    // So, we make it translatable, hoping that in the future it will
-    // be used in some kind of notification.
-    QString message;
-    if (!_wantedClose || exitCode != 0) {
+    // A shell that crashed or was killed has ended just the same; not
+    // emitting finished() here used to leave its view open but dead.
+    if (!_wantedClose && exitStatus != QProcess::NormalExit)
+        qWarning() << "Session" << _nameTitle << "exited unexpectedly, exit code" << exitCode;
 
-        if (_shellProcess->exitStatus() == QProcess::NormalExit) {
-            message = tr("Session '%1' exited with code %2.").arg(_nameTitle).arg(exitCode);
-        } else {
-            message = tr("Session '%1' crashed.").arg(_nameTitle);
-        }
-    }
-
-    if ( !_wantedClose && exitStatus != QProcess::NormalExit )
-        message = tr("Session '%1' exited unexpectedly.").arg(_nameTitle);
-    else
-        emit finished();
+    emit finished();
 }
 
 Emulation * Session::emulation() const
