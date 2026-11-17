@@ -497,6 +497,7 @@ signals:
     void activity();
 
 private slots:
+    void replyToColorQuery(int which, const QByteArray& terminator);
     void done(int, QProcess::ExitStatus );
 
 //  void fireZModemDetected();

@@ -600,11 +600,17 @@ public slots:
      */
     void setBackgroundColor(const QColor& color);
 
+    /** Returns the default background color. */
+    QColor backgroundColor() const { return _colorTable[DEFAULT_BACK_COLOR].color; }
+
     /**
      * Sets the text of the display to the specified color.
      * @see setColorTable(), setBackgroundColor()
      */
     void setForegroundColor(const QColor& color);
+
+    /** Returns the default foreground color. */
+    QColor foregroundColor() const { return _colorTable[DEFAULT_FORE_COLOR].color; }
 
     void selectionChanged();
 

@@ -437,6 +437,13 @@ signals:
    */
   void cursorChanged(KeyboardCursorShape cursorShape, bool blinkingCursorEnabled);
 
+  /**
+   * Emitted when a program queries a dynamic color with OSC 10, 11 or 12
+   * (foreground, background, cursor). The reply is sent back with
+   * sendString(), ending with @p terminator (BEL or ST, as in the query).
+   */
+  void colorQueryReceived(int which, const QByteArray& terminator);
+
   void handleCommandFromKeyboard(KeyboardTranslator::Command command);
   void outputFromKeypressEvent(void);
 

@@ -477,6 +477,13 @@ void Vt102Emulation::processWindowAttributeChange()
   {
     case 8:  processHyperlink(newValue);    return;
     case 52: setClipboardFromOsc(newValue); return;
+    case 10: case 11: case 12:
+      // Only queries are answered: the displayed colors come from the
+      // application's own settings, so programs may not change them.
+      if (newValue == QLatin1String("?"))
+        emit colorQueryReceived(attributeToChange,
+                                _oscBuffer.endsWith(QLatin1Char('\\')) ? QByteArray("\033\\") : QByteArray("\a"));
+      return;
   }
 
   _pendingTitleUpdates[attributeToChange] = newValue;
@@ -652,6 +659,13 @@ void Vt102Emulation::processToken(int token, wchar_t p, int q)
 // resize = \e[8;<row>;<col>t
     case TY_CSI_PS('t',   8) : setImageSize( p /*lines */, q /* columns */ );
                                emit imageResizeRequest(QSize(q, p));
+                               break;
+    case TY_CSI_PS('t',  18) : { // report the text area size in characters
+                                 const QByteArray reply = QStringLiteral("\033[8;%1;%2t")
+                                     .arg(_currentScreen->getLines())
+                                     .arg(_currentScreen->getColumns()).toLatin1();
+                                 sendString(reply.constData(), reply.size());
+                               }
                                break;
 
 // change tab text color : \e[28;<color>t  color: 0-16,777,215

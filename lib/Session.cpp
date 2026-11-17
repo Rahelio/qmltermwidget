@@ -106,6 +106,8 @@ Session::Session(QObject* parent) :
             this, SLOT(onViewSizeChange(int, int)));
     connect(_emulation, &Vt102Emulation::cursorChanged,
             this, &Session::cursorChanged);
+    connect(_emulation, &Emulation::colorQueryReceived,
+            this, &Session::replyToColorQuery);
 
     //connect teletype to emulation backend
     _shellProcess->setUtf8Mode(true);
@@ -937,6 +939,36 @@ void Session::onReceiveBlock( const char * buf, int len )
 {
     _emulation->receiveData( buf, len );
     emit receivedData( QString::fromLatin1( buf, len ) );
+}
+
+void Session::replyToColorQuery(int which, const QByteArray& terminator)
+{
+    if (_views.isEmpty())
+        return;
+
+    const TerminalDisplay *view = _views.constFirst();
+    QColor color;
+    switch (which) {
+    case 10: color = view->foregroundColor(); break;
+    case 11: color = view->backgroundColor(); break;
+    case 12:
+        color = view->keyboardCursorColor();
+        if (!color.isValid())
+            color = view->foregroundColor();
+        break;
+    default:
+        return;
+    }
+
+    // xterm format: 16 bits per channel, in hex.
+    const QRgba64 rgb = color.rgba64();
+    const QByteArray reply = QStringLiteral("\033]%1;rgb:%2/%3/%4")
+            .arg(which)
+            .arg(rgb.red(), 4, 16, QLatin1Char('0'))
+            .arg(rgb.green(), 4, 16, QLatin1Char('0'))
+            .arg(rgb.blue(), 4, 16, QLatin1Char('0'))
+            .toLatin1() + terminator;
+    _emulation->sendString(reply.constData(), reply.size());
 }
 
 QSize Session::size()
