@@ -1869,13 +1869,16 @@ int TerminalDisplay::textWidth(const int startColumn, const int length, const in
 
 QRect TerminalDisplay::calculateTextArea(int topLeftX, int topLeftY, int startColumn, int line, int length,
                                          const QTransform &textScale) {
-  // NOTE: Only the origin offset should be mapped inversely for double width/height lines.
-  QPoint origin = textScale.inverted().map(QPoint(_leftMargin + topLeftX, _topMargin + topLeftY));
+  // The painter is scaled for double width/height lines. Horizontally, the
+  // columns of a double-width line are themselves double width, so only the
+  // margin is mapped back; vertically, the line's own position must be
+  // mapped back too, or a double-height line is drawn at twice its y.
   int left = _fixedFont ? _fontWidth * startColumn : textWidth(0, startColumn, line);
   int top = _fontHeight * line;
   int width = _fixedFont ? _fontWidth * length : textWidth(startColumn, length, line);
+  QPoint origin = textScale.inverted().map(QPoint(_leftMargin + topLeftX, _topMargin + topLeftY + top));
   return {origin.x() + left,
-          origin.y() + top,
+          origin.y(),
           width,
           _fontHeight};
 }
@@ -2292,7 +2295,6 @@ void TerminalDisplay::mousePressEvent(QMouseEvent* ev)
 
   if ( ev->button() == Qt::LeftButton)
   {
-
     // Ctrl+click opens OSC 8 hyperlinks.
     if (ev->modifiers() & Qt::ControlModifier) {
       const QString url = hyperlinkAt(charLine, charColumn);
