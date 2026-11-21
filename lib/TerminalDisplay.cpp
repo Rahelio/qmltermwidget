@@ -3076,6 +3076,16 @@ out:
     return {x, y};
 }
 
+void TerminalDisplay::setScrollSpeed(qreal speed)
+{
+  speed = qBound<qreal>(0.05, speed, 10.0);
+  if (qFuzzyCompare(_scrollSpeed, speed))
+    return;
+  _scrollSpeed = speed;
+  _scrollBar->setSpeed(speed);
+  emit scrollSpeedChanged();
+}
+
 void TerminalDisplay::wheelEvent( QWheelEvent* ev )
 {
   if (ev->angleDelta().y() == 0)
@@ -3102,7 +3112,9 @@ void TerminalDisplay::wheelEvent( QWheelEvent* ev )
 
         // QWheelEvent::angleDelta().y() gives rotation in eighths of a degree
         int wheelDegrees = ev->angleDelta().y() / 8;
-        int linesToScroll = abs(wheelDegrees) / 5;
+        _keyScrollRemainder += (abs(wheelDegrees) / 5.0) * _scrollSpeed;
+        int linesToScroll = int(_keyScrollRemainder);
+        _keyScrollRemainder -= linesToScroll;
 
         QKeyEvent keyScrollEvent(QEvent::KeyPress,key,Qt::NoModifier);
 
@@ -4202,17 +4214,19 @@ void ScrollBar::handleEvent(QEvent* event)
         return;
     }
 
+    // Accumulate fractional lines so small trackpad deltas scroll smoothly
+    // and slowly instead of jumping a whole line per event.
     // Qt uses positive delta for scrolling up (towards the user), which is a
     // smaller scrollbar value.
-    const int steps = deltaY / 120; // 120 == 15 deg * 8
-    int stepCount = steps != 0 ? steps : (deltaY > 0 ? 1 : -1);
+    const bool page = wheel->modifiers() & Qt::ControlModifier;
+    const int step = page ? (m_pageStep ? m_pageStep : m_singleStep) : m_singleStep;
+    m_remainder += (deltaY / 120.0) * step * m_speed; // 120 == 15 deg * 8
+    const int increment = int(m_remainder);
+    m_remainder -= increment;
 
-    int increment = m_singleStep * stepCount;
-    if (wheel->modifiers() & Qt::ControlModifier) {
-        increment = (m_pageStep ? m_pageStep : m_singleStep) * stepCount;
+    if (increment != 0) {
+        setValue(m_value - increment);
     }
-
-    setValue(m_value - increment);
     wheel->accept();
 }
 

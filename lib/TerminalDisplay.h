@@ -110,6 +110,7 @@ class KONSOLEPRIVATE_EXPORT TerminalDisplay : public QQuickPaintedItem
    Q_PROPERTY(bool enableItalic         READ getItalicEnabled WRITE setItalicEnabled NOTIFY italicEnabledChanged )
    Q_PROPERTY(bool fullCursorHeight     READ fullCursorHeight WRITE setFullCursorHeight NOTIFY fullCursorHeightChanged)
    Q_PROPERTY(bool blinkingCursor       READ blinkingCursor   WRITE setBlinkingCursor NOTIFY blinkingCursorStateChanged)
+   Q_PROPERTY(qreal scrollSpeed         READ scrollSpeed     WRITE setScrollSpeed NOTIFY scrollSpeedChanged      )
    Q_PROPERTY(bool antialiasText        READ antialias       WRITE setAntialias)
    Q_PROPERTY(QStringList availableColorSchemes READ availableColorSchemes NOTIFY availableColorSchemesChanged)
    Q_PROPERTY(bool useFBORendering      READ useFBORendering WRITE setUseFBORendering)
@@ -242,6 +243,10 @@ public:
 
     int margin() const;
     uint lineSpacing() const;
+
+    /** Multiplier for mouse wheel / trackpad scrolling (1.0 = default). */
+    void setScrollSpeed(qreal speed);
+    qreal scrollSpeed() const { return _scrollSpeed; }
 
     void emitSelection(bool useXselection,bool appendReturn);
 
@@ -683,6 +688,7 @@ signals:
     void scrollbarParamsChanged(int value);
     void vtFontChanged();
     void lineSpacingChanged();
+    void scrollSpeedChanged();
     void availableColorSchemesChanged();
     void colorSchemeChanged();
     void fullCursorHeightChanged();
@@ -951,6 +957,8 @@ private:
     QLabel* _outputSuspendedLabel;
 
     uint _lineSpacing;
+    qreal _scrollSpeed = 1.0;
+    qreal _keyScrollRemainder = 0.0;
     QString _colorScheme;
     bool _colorsInverted; // true during visual bell
 
@@ -1085,6 +1093,7 @@ public:
     bool underMouse() const;
     bool isTransient() const { return false; }
     void handleEvent(QEvent*); // no-op hook
+    void setSpeed(qreal speed) { m_speed = speed; }
 
 Q_SIGNALS:
     void valueChanged(int value);
@@ -1094,6 +1103,8 @@ private:
     int m_maximum{0};
     int m_value{0};
     int m_singleStep{1};
+    qreal m_speed{1.0};
+    qreal m_remainder{0.0};
     int m_pageStep{0};
     int m_width{0};
     int m_height{0};
