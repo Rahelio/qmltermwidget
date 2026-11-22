@@ -626,7 +626,7 @@ public slots:
 
     void simulateKeyPress(int key, int modifiers, bool pressed, quint32 nativeScanCode, const QString &text);
     void simulateKeySequence(const QKeySequence &sequence);
-    void simulateWheel(int x, int y, int buttons, int modifiers, QPointF angleDelta);
+    void simulateWheel(int x, int y, int buttons, int modifiers, QPointF angleDelta, QPointF pixelDelta = QPointF());
     void simulateMouseMove(int x, int y, int button, int buttons, int modifiers);
     void simulateMousePress(int x, int y, int button, int buttons, int modifiers);
     void simulateMouseRelease(int x, int y, int button, int buttons, int modifiers);
@@ -715,6 +715,7 @@ protected:
     void mouseMoveEvent( QMouseEvent* ) override;
     virtual void extendSelection( const QPoint& pos );
     void wheelEvent( QWheelEvent* ) override;
+    int consumeWheelLines(QWheelEvent* ev);
 
     bool focusNextPrevChild( bool next );
 
@@ -958,7 +959,7 @@ private:
 
     uint _lineSpacing;
     qreal _scrollSpeed = 1.0;
-    qreal _keyScrollRemainder = 0.0;
+    qreal _wheelRemainder = 0.0;
     QString _colorScheme;
     bool _colorsInverted; // true during visual bell
 
@@ -1092,8 +1093,6 @@ public:
     void setAttribute(Qt::WidgetAttribute); // no-op
     bool underMouse() const;
     bool isTransient() const { return false; }
-    void handleEvent(QEvent*); // no-op hook
-    void setSpeed(qreal speed) { m_speed = speed; }
 
 Q_SIGNALS:
     void valueChanged(int value);
@@ -1103,8 +1102,6 @@ private:
     int m_maximum{0};
     int m_value{0};
     int m_singleStep{1};
-    qreal m_speed{1.0};
-    qreal m_remainder{0.0};
     int m_pageStep{0};
     int m_width{0};
     int m_height{0};

@@ -46,6 +46,7 @@
 #include <QPixmap>
 #include <QRegularExpression>
 #include <QStyle>
+#include <QStyleHints>
 #include <QTimer>
 #include <QtDebug>
 #include <QGuiApplication>
@@ -3082,13 +3083,47 @@ void TerminalDisplay::setScrollSpeed(qreal speed)
   if (qFuzzyCompare(_scrollSpeed, speed))
     return;
   _scrollSpeed = speed;
-  _scrollBar->setSpeed(speed);
   emit scrollSpeedChanged();
+}
+
+int TerminalDisplay::consumeWheelLines(QWheelEvent* ev)
+{
+  // Convert the event into a (possibly fractional) number of lines.
+  // Positive means scrolling up / back in history.
+  //
+  // Trackpads and Magic Mice (macOS, Wayland) report precise pixel deltas in
+  // many small events; translate those using the line height. Notched mouse
+  // wheels report angleDelta in eighths of a degree, 120 per 15 degree step,
+  // which scrolls the platform's wheelScrollLines() (usually 3) per step.
+  qreal lines;
+  const int pixelY = ev->pixelDelta().y();
+  if (pixelY != 0) {
+    lines = qreal(pixelY) / qMax(1, _fontHeight);
+  } else {
+    lines = ev->angleDelta().y() / 120.0
+            * QGuiApplication::styleHints()->wheelScrollLines();
+  }
+  lines *= _scrollSpeed;
+
+  // Drop leftovers from the other direction so reversing responds at once.
+  if ((lines > 0 && _wheelRemainder < 0) || (lines < 0 && _wheelRemainder > 0))
+    _wheelRemainder = 0.0;
+
+  // Accumulate fractions so small deltas add up instead of being lost.
+  _wheelRemainder += lines;
+  const int whole = int(_wheelRemainder);
+  _wheelRemainder -= whole;
+  return whole;
 }
 
 void TerminalDisplay::wheelEvent( QWheelEvent* ev )
 {
-  if (ev->angleDelta().y() == 0)
+  if (ev->angleDelta().y() == 0 && ev->pixelDelta().y() == 0)
+    return;
+
+  const int lines = consumeWheelLines(ev);
+  ev->accept();
+  if (lines == 0)
     return;
 
   // if the terminal program is not interested mouse events
@@ -3098,42 +3133,37 @@ void TerminalDisplay::wheelEvent( QWheelEvent* ev )
   if ( _mouseMarks )
   {
     bool canScroll = _scrollBar->maximum() > 0;
-      if (canScroll)
-        _scrollBar->handleEvent(ev);
+    if (canScroll)
+    {
+      // Qt uses a positive delta for scrolling up, which is a smaller
+      // scrollbar value.
+      _scrollBar->setValue(_scrollBar->value() - lines);
+    }
     else
     {
-        // assume that each Up / Down key event will cause the terminal application
-        // to scroll by one line.
-        //
-        // to get a reasonable scrolling speed, scroll by one line for every 5 degrees
-        // of mouse wheel rotation.  Mouse wheels typically move in steps of 15 degrees,
-        // giving a scroll of 3 lines
-        int key = ev->angleDelta().y() > 0 ? Qt::Key_Up : Qt::Key_Down;
+      // assume that each Up / Down key event will cause the terminal
+      // application to scroll by one line.
+      int key = lines > 0 ? Qt::Key_Up : Qt::Key_Down;
+      QKeyEvent keyScrollEvent(QEvent::KeyPress,key,Qt::NoModifier);
 
-        // QWheelEvent::angleDelta().y() gives rotation in eighths of a degree
-        int wheelDegrees = ev->angleDelta().y() / 8;
-        _keyScrollRemainder += (abs(wheelDegrees) / 5.0) * _scrollSpeed;
-        int linesToScroll = int(_keyScrollRemainder);
-        _keyScrollRemainder -= linesToScroll;
-
-        QKeyEvent keyScrollEvent(QEvent::KeyPress,key,Qt::NoModifier);
-
-        for (int i=0;i<linesToScroll;i++)
-            emit keyPressedSignal(&keyScrollEvent, false);
+      for (int i=0;i<abs(lines);i++)
+        emit keyPressedSignal(&keyScrollEvent, false);
     }
   }
   else
   {
-    // terminal program wants notification of mouse activity
+    // terminal program wants notification of mouse activity:
+    // send one wheel button press per line.
 
     int charLine;
     int charColumn;
     getCharacterPosition( ev->position() , charLine , charColumn );
 
-    emit mouseSignal( ev->angleDelta().y() > 0 ? 4 : 5,
-                      charColumn + 1,
-                      charLine + 1 +_scrollBar->value() -_scrollBar->maximum() ,
-                      0);
+    for (int i=0;i<abs(lines);i++)
+      emit mouseSignal( lines > 0 ? 4 : 5,
+                        charColumn + 1,
+                        charLine + 1 +_scrollBar->value() -_scrollBar->maximum() ,
+                        0);
   }
 }
 
@@ -4056,9 +4086,10 @@ void TerminalDisplay::simulateKeySequence(const QKeySequence &keySequence)
     }
 }
 
-void TerminalDisplay::simulateWheel(int x, int y, int buttons, int modifiers, QPointF angleDelta){
-    QPoint anglePoint(0, static_cast<int>(angleDelta.y()));
-    QWheelEvent event(QPointF(x, y), QPointF(x, y), QPoint(), anglePoint,
+void TerminalDisplay::simulateWheel(int x, int y, int buttons, int modifiers, QPointF angleDelta, QPointF pixelDelta){
+    QPoint anglePoint(0, qRound(angleDelta.y()));
+    QPoint pixelPoint(0, qRound(pixelDelta.y()));
+    QWheelEvent event(QPointF(x, y), QPointF(x, y), pixelPoint, anglePoint,
                       Qt::MouseButtons(buttons), Qt::KeyboardModifiers(modifiers),
                       Qt::NoScrollPhase, false);
     wheelEvent(&event);
@@ -4198,36 +4229,4 @@ void ScrollBar::setPalette(const QPalette&) {}
 void ScrollBar::setAutoFillBackground(bool) {}
 void ScrollBar::setAttribute(Qt::WidgetAttribute) {}
 bool ScrollBar::underMouse() const { return false; }
-void ScrollBar::handleEvent(QEvent* event)
-{
-    auto *wheel = dynamic_cast<QWheelEvent*>(event);
-    if (!wheel) {
-        return;
-    }
-
-    // Prefer pixelDelta for smooth/trackpad scrolling, fall back to angleDelta
-    int deltaY = wheel->pixelDelta().y();
-    if (deltaY == 0) {
-        deltaY = wheel->angleDelta().y();
-    }
-    if (deltaY == 0) {
-        return;
-    }
-
-    // Accumulate fractional lines so small trackpad deltas scroll smoothly
-    // and slowly instead of jumping a whole line per event.
-    // Qt uses positive delta for scrolling up (towards the user), which is a
-    // smaller scrollbar value.
-    const bool page = wheel->modifiers() & Qt::ControlModifier;
-    const int step = page ? (m_pageStep ? m_pageStep : m_singleStep) : m_singleStep;
-    m_remainder += (deltaY / 120.0) * step * m_speed; // 120 == 15 deg * 8
-    const int increment = int(m_remainder);
-    m_remainder -= increment;
-
-    if (increment != 0) {
-        setValue(m_value - increment);
-    }
-    wheel->accept();
-}
-
 //#include "TerminalDisplay.moc"
